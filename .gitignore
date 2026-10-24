@@ -1,0 +1,16 @@
+*.exe
+*.dll
+*.pdb
+*.zip
+dist/
+tools/*
+!tools/README.md
+tests/
+*.mp4
+*.mkv
+*.mov
+*.clipdock
+*.log
+startup-error.txt
+last-export-error.txt
+.vs/
