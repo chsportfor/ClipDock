@@ -30,8 +30,8 @@ namespace ClipDock {
   public static string Clock(double n) {return TimeSpan.FromSeconds(Math.Max(0,n)).ToString(@"hh\:mm\:ss\.fff");}
  }
  public class VideoInfo {public int Width,Height; public double Duration,Fps; public bool Audio;}
- public class Settings {public string Ratio="원본",Mode="여백",Resolution="원본 크기 기준",Encoder="CPU"; public double Fps=60,X=.5,Y=.5;}
- public static class Engine {
+ public class Settings {public string Ratio="원본",Mode="여백",Resolution="원본 크기 기준",Encoder="CPU"; public double Fps=60,X=.5,Y=.5,Zoom=1,OffsetX,OffsetY;}
+ public static partial class Engine {
   public static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
   public static string Base=AppDomain.CurrentDomain.BaseDirectory;
   public static string Tool(string n) {string p=Path.Combine(Base,"tools",n+".exe"); if(!File.Exists(p)) throw new Exception("tools 폴더에 "+n+".exe가 없습니다."); return p;}
@@ -74,10 +74,10 @@ namespace ClipDock {
    for(int i=0;i<count;i++) {b.Append("[v"+i+"]");if(info.Audio)b.Append("[a"+i+"]");}
    b.Append("concat=n="+count+":v=1:a="+(info.Audio?"1[cv][outa];":"0[cv];"));
    int[] z=Size(info,s); string w=z[0].ToString(),h=z[1].ToString();
-   b.Append("[cv]fps="+N(s.Fps)+",");
-   if(s.Mode=="채우기") b.Append("scale="+w+":"+h+":force_original_aspect_ratio=increase:force_divisible_by=2,crop="+w+":"+h+":(iw-ow)*"+N(s.X)+":(ih-oh)*"+N(s.Y));
-   else b.Append("scale="+w+":"+h+":force_original_aspect_ratio=decrease:force_divisible_by=2,pad="+w+":"+h+":(ow-iw)/2:(oh-ih)/2:color=black");
-   b.Append(",setsar=1,format=yuv420p[outv]"); return b.ToString();
+   var place=Placement(info,s);
+   b.Append("[cv]fps="+N(s.Fps)+",scale="+place.Width+":"+place.Height+",setsar=1[scaled];");
+   b.Append("color=c=black:s="+w+"x"+h+":r="+N(s.Fps)+":d="+N(clips.Sum(c=>c.Duration))+"[canvas];");
+   b.Append("[canvas][scaled]overlay=x="+N(place.Left)+":y="+N(place.Top)+":shortest=1,setsar=1,format=yuv420p[outv]"); return b.ToString();
   }
   public static string Arguments(string input,string output,string filter,VideoInfo info,Settings s,IList<Segment> clips) {
    clips=Arrangement.Plan(clips);
@@ -115,8 +115,13 @@ namespace ClipDock {
  <Border Grid.Row='0' BorderBrush='#293041' BorderThickness='0,0,0,1' Padding='23,10'><DockPanel><StackPanel DockPanel.Dock='Left'><TextBlock x:Name='Brand' Text='ClipDock' FontSize='26' FontWeight='Bold'/><TextBlock x:Name='Tagline' Text='게임의 좋은 순간만, 빠르게.' FontSize='12' Foreground='#99A8BF'/></StackPanel><StackPanel Orientation='Horizontal' HorizontalAlignment='Right' VerticalAlignment='Center'><Button x:Name='ProjectOpen' Content='작업 열기' ToolTip='Ctrl+Shift+O'/><Button x:Name='ProjectSave' Content='작업 저장' ToolTip='Ctrl+Shift+S'/><Button x:Name='Open' Content='영상 열기   Ctrl+O'/><Button x:Name='Save' Content='MP4 저장   Ctrl+S' Background='#3D78DE' Margin='14,3,3,3'/><Button x:Name='Cancel' Content='저장 취소' Visibility='Collapsed'/></StackPanel></DockPanel></Border>
  <Grid x:Name='EditorBody' Grid.Row='1' Margin='20,16,20,10'><Grid.ColumnDefinitions><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
   <Grid x:Name='EditorRows'><Grid.RowDefinitions><RowDefinition Height='*' MinHeight='96'/><RowDefinition Height='66'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
-   <Border Grid.Row='0' Background='#080B11' CornerRadius='10' BorderBrush='#293041' BorderThickness='1' ClipToBounds='True'><Grid x:Name='Stage' Margin='8'><Canvas x:Name='Viewport' Background='Black' ClipToBounds='True' HorizontalAlignment='Center' VerticalAlignment='Center'><MediaElement x:Name='Player' LoadedBehavior='Manual' UnloadedBehavior='Close' Stretch='Fill'/></Canvas><StackPanel x:Name='Empty' HorizontalAlignment='Center' VerticalAlignment='Center'><TextBlock Text='영상을 여기에 놓으세요' FontSize='23' HorizontalAlignment='Center'/><TextBlock Text='MP4 · MOV · MKV · AVI · WebM' Foreground='#8493AC' Margin='0,12,0,0' HorizontalAlignment='Center'/></StackPanel><Border Background='#C0101722' VerticalAlignment='Top' HorizontalAlignment='Left' CornerRadius='5' Padding='9,5' Margin='8'><TextBlock x:Name='PreviewLabel' Text='PREVIEW' FontSize='11' Foreground='#ADBBD2'/></Border></Grid></Border>
-   <Grid Grid.Row='1' Margin='0,5'><Grid.RowDefinitions><RowDefinition Height='36'/><RowDefinition Height='20'/></Grid.RowDefinitions><Slider x:Name='ResultSeek' Grid.Row='1' Visibility='Collapsed' IsMoveToPointEnabled='True' Minimum='0' Maximum='1'/><Slider x:Name='Seek' Minimum='0' Maximum='1' Visibility='Collapsed'/><DockPanel><Button x:Name='Play' Content='▶ 재생' Padding='17,5' ToolTip='재생 / 일시 정지 (Space)'/><Button x:Name='ResultPreview' Visibility='Collapsed'/><TextBlock x:Name='Position' Text='00:00:00.000 / 00:00:00.000' FontFamily='Consolas' Margin='12,0'/><TextBlock x:Name='Meta' Text='영상 없음' Foreground='#8D9BB2' FontSize='11' HorizontalAlignment='Right'/></DockPanel></Grid>
+   <Border Grid.Row='0' Background='#080B11' CornerRadius='10' BorderBrush='#293041' BorderThickness='1' ClipToBounds='True'><Grid x:Name='Stage' Margin='8'><Canvas x:Name='Viewport' Background='Black' ClipToBounds='True' HorizontalAlignment='Center' VerticalAlignment='Center'><MediaElement x:Name='Player' LoadedBehavior='Manual' UnloadedBehavior='Close' Stretch='Fill'/></Canvas><StackPanel x:Name='Empty' HorizontalAlignment='Center' VerticalAlignment='Center'><TextBlock Text='영상을 여기에 놓으세요' FontSize='23' HorizontalAlignment='Center'/><TextBlock Text='MP4 · MOV · MKV · AVI · WebM' Foreground='#8493AC' Margin='0,12,0,0' HorizontalAlignment='Center'/></StackPanel><Border Background='#C0101722' VerticalAlignment='Top' HorizontalAlignment='Left' CornerRadius='5' Padding='9,5' Margin='8'><TextBlock x:Name='PreviewLabel' Text='PREVIEW' FontSize='11' Foreground='#ADBBD2'/></Border><Border x:Name='FrameTools' Visibility='Collapsed' VerticalAlignment='Bottom' Margin='6' Padding='10,7' CornerRadius='8' Background='#F0182233' BorderBrush='#486387' BorderThickness='1'>
+ <StackPanel>
+  <WrapPanel VerticalAlignment='Center'><TextBlock Text='출력 화면' Margin='0,0,8,0'/><ComboBox x:Name='FrameCanvas' Width='170' Margin='0,0,12,0' MinHeight='32'/><Button x:Name='FrameFit' Content='전체 보이기' Padding='9,5'/><Button x:Name='FrameFill' Content='여백 없이 채우기' Padding='9,5'/><Button x:Name='FrameStretch' Content='화면에 늘림' Padding='9,5'/><Button x:Name='FrameReset' Content='초기화' Padding='9,5'/></WrapPanel>
+  <WrapPanel Margin='0,3,0,0'><TextBlock Text='크기' Margin='0,0,8,0'/><Slider x:Name='FrameZoom' Minimum='.1' Maximum='5' Value='1' Width='160' SmallChange='.01' LargeChange='.1' VerticalAlignment='Center'/><TextBlock x:Name='FramePercent' Text='100%' Width='55' Margin='8,0'/><TextBlock Text='영상 드래그: 위치 이동 · 휠: 확대/축소 · Esc: 닫기' Foreground='#A9BEDC' FontSize='10'/></WrapPanel>
+ </StackPanel>
+</Border></Grid></Border>
+   <Grid Grid.Row='1' Margin='0,5'><Grid.RowDefinitions><RowDefinition Height='36'/><RowDefinition Height='20'/></Grid.RowDefinitions><Slider x:Name='ResultSeek' Grid.Row='1' Visibility='Collapsed' IsMoveToPointEnabled='True' Minimum='0' Maximum='1'/><Slider x:Name='Seek' Minimum='0' Maximum='1' Visibility='Collapsed'/><DockPanel><Button x:Name='Play' Content='▶ 재생' Padding='17,5' ToolTip='재생 / 일시 정지 (Space)'/><Button x:Name='FrameToggle' Content='화면 조절' Padding='12,5'/><Button x:Name='ResultPreview' Visibility='Collapsed'/><TextBlock x:Name='Position' Text='00:00:00.000 / 00:00:00.000' FontFamily='Consolas' Margin='12,0'/><TextBlock x:Name='Meta' Text='영상 없음' Foreground='#8D9BB2' FontSize='11' HorizontalAlignment='Right'/></DockPanel></Grid>
    <Border Grid.Row='2' Background='#181E2B' CornerRadius='10' Padding='14,10'><StackPanel>
     <DockPanel Margin='0,0,0,8'><TextBlock Text='편집 타임라인' FontSize='15' FontWeight='Bold'/><TextBlock x:Name='Total' Foreground='#9DB3D0' HorizontalAlignment='Right'/></DockPanel>
     <DockPanel><StackPanel Orientation='Horizontal'><Button x:Name='Split' Content='분할   S' Background='#3D78DE' ToolTip='재생 막대 위치에서 두 조각으로 나눕니다.'/><Button x:Name='Remove' Content='삭제   Del' ToolTip='선택 조각만 지우고 빈자리는 남깁니다.'/><Button x:Name='Undo' Content='↶' ToolTip='실행 취소 · Ctrl+Z'/><Button x:Name='More' Content='···' ToolTip='합치기, 순서 변경, 다시 실행'/></StackPanel><TextBlock x:Name='TrackHint' Text='위 눈금: 탐색 · 조각 드래그: 이동 · 양끝: 자르기' FontSize='11' Foreground='#8FA2BF' HorizontalAlignment='Right'/></DockPanel>
@@ -146,7 +151,7 @@ namespace ClipDock {
  </Border></Grid>";
   Grid root; MediaElement player; Image still; Slider seek; ListBox list; ObservableCollection<Segment> clips=new ObservableCollection<Segment>();
   Timeline timeline; bool syncingSelection, syncingScroll;
-  class EditState {public List<Segment> Clips;public int Selection;public List<int> Selections;}
+  class EditState {public List<Segment> Clips;public int Selection;public List<int> Selections;public FrameState Frame;}
   Stack<EditState> undo=new Stack<EditState>(),redo=new Stack<EditState>();
   DispatcherTimer stillTimer; Process thumbnail; int stillVersion;
   DispatcherTimer timer; VideoInfo info; string source; bool playing,busy,loading,closed,changing; Process encoding; string partial,filterFile; StringBuilder errorLog=new StringBuilder();
@@ -165,7 +170,7 @@ namespace ClipDock {
    timeline.ViewChanged+=SyncScroll;
    C<ScrollBar>("TimelineScroll").ValueChanged+=delegate{if(!syncingScroll){timeline.ViewStart=C<ScrollBar>("TimelineScroll").Value;timeline.InvalidateVisual();}};
    stillTimer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(180)};stillTimer.Tick+=async delegate{stillTimer.Stop();await StillFrame();};
-   Fill("Ratio",new[]{"원본","16:9","9:16","4:3","1:1"}); Fill("Fit",new[]{"여백 추가","꽉 채우기"});Fill("Resolution",new[]{"원본 크기 기준","720p","1080p","1440p"});Fill("Fps",new[]{"원본 유지","30","60","120","144","165","240"});Fill("Encoder",new[]{"CPU · 호환성 우선","NVIDIA · GPU 사용"});
+   Fill("Ratio",new[]{"원본","16:9","9:16","4:3","1:1"}); Fill("Fit",new[]{"여백 추가","꽉 채우기","화면에 늘림"});Fill("Resolution",new[]{"원본 크기 기준","720p","1080p","1440p"});Fill("Fps",new[]{"원본 유지","30","60","120","144","165","240"});Fill("Encoder",new[]{"CPU · 호환성 우선","NVIDIA · GPU 사용"});
    Bind("Open",delegate{OpenDialog();});Bind("Play",delegate{Toggle();});Bind("MarkIn",delegate{Mark(true);});Bind("MarkOut",delegate{Mark(false);});Bind("Update",delegate{ApplyTimes();});Bind("Remove",delegate{DeleteClip();});Bind("Up",delegate{Move(-1);});Bind("Down",delegate{Move(1);});Bind("Save",async delegate{await Export();});Bind("Cancel",delegate{Cancel();});
    Bind("Split",delegate{SplitClip();});Bind("Undo",delegate{Restore(false);});Bind("Redo",delegate{Restore(true);});
    Bind("ZoomIn",delegate{timeline.Zoom(2,seek.Value);});Bind("ZoomOut",delegate{timeline.Zoom(.5,seek.Value);});Bind("ZoomAll",delegate{timeline.ResetView();});
@@ -179,7 +184,7 @@ namespace ClipDock {
    player.MediaFailed+=delegate{playing=false;C<Button>("Play").Content="▶ 재생";ScheduleStill();Status("이 코덱의 실시간 재생은 Windows에서 지원하지 않습니다. 탐색 시 정지 화면과 MP4 저장은 사용할 수 있어요.");};
    DragOver+=delegate(object sender,DragEventArgs e){e.Effects=e.Data.GetDataPresent(DataFormats.FileDrop)&&!busy&&!loading&&!previewBusy?DragDropEffects.Copy:DragDropEffects.None;e.Handled=true;};
    Drop+=async delegate(object sender,DragEventArgs e){if(C<Border>("ExportOverlay").Visibility!=Visibility.Visible&&!busy&&!loading&&!previewBusy&&e.Data.GetDataPresent(DataFormats.FileDrop)){string[] files=(string[])e.Data.GetData(DataFormats.FileDrop);if(files.Length>0)await OpenPath(files[0]);}};
-   InitializeFeatures();InitializeGrouping();InitializeEditView();Bind("ExportBack",delegate{CloseExportSettings();});Bind("ExportConfirm",async delegate{await StartExport();});PreviewKeyDown+=Keys;SizeChanged+=delegate{AdaptEditorSize();};Loaded+=delegate{AdaptEditorSize();};
+   InitializeFeatures();InitializeGrouping();InitializeEditView();InitializeFraming();Bind("ExportBack",delegate{CloseExportSettings();});Bind("ExportConfirm",async delegate{await StartExport();});PreviewKeyDown+=Keys;SizeChanged+=delegate{AdaptEditorSize();};Loaded+=delegate{AdaptEditorSize();};
    timer=new DispatcherTimer(DispatcherPriority.Render){Interval=TimeSpan.FromMilliseconds(16)};timer.Tick+=delegate{TickLive();};timer.Start();
    Closing+=delegate(object sender,System.ComponentModel.CancelEventArgs e){if(!busy&&!ConfirmLeave()){e.Cancel=true;return;}if(busy){if(MessageBox.Show(this,"진행 중인 저장을 취소하고 닫을까요?","ClipDock",MessageBoxButton.YesNo)!=MessageBoxResult.Yes){e.Cancel=true;return;}Cancel();try{if(encoding!=null)encoding.WaitForExit(3000);}catch{}foreach(string f in new[]{partial,filterFile})try{if(f!=null&&File.Exists(f))File.Delete(f);}catch{}}closed=true;StopFeatures();timer.Stop();stillTimer.Stop();try{if(thumbnail!=null&&!thumbnail.HasExited)thumbnail.Kill();}catch{}player.Close();};
    Refresh();
@@ -207,9 +212,9 @@ namespace ClipDock {
    }catch{}
   }
   bool Ready {get{return info!=null&&!busy&&!loading&&!previewBusy&&!resultMode;}}
-  EditState Capture(){return new EditState{Clips=clips.Select(c=>c.Copy()).ToList(),Selection=list.SelectedIndex,Selections=SelectedIndices()};}
+  EditState Capture(){return new EditState{Clips=clips.Select(c=>c.Copy()).ToList(),Selection=list.SelectedIndex,Selections=SelectedIndices(),Frame=CaptureFrame()};}
   void Remember(){if(playing)PauseLive();undo.Push(Capture());redo.Clear();}
-  void Restore(bool forward){if(!Ready)return;var from=forward?redo:undo;var to=forward?undo:redo;if(from.Count==0)return;to.Push(Capture());var state=from.Pop();gapPreview=false;player.Visibility=Visibility.Visible;syncingSelection=true;clips.Clear();foreach(var c in state.Clips)clips.Add(c.Copy());list.SelectedIndex=state.Selection;syncingSelection=false;SelectMany(state.Selections??new List<int>{state.Selection});Status(forward?"다시 실행했습니다.":"이전 편집으로 되돌렸습니다.");}
+  void Restore(bool forward){if(!Ready)return;var from=forward?redo:undo;var to=forward?undo:redo;if(from.Count==0)return;to.Push(Capture());var state=from.Pop();RestoreFrame(state.Frame);gapPreview=false;player.Visibility=Visibility.Visible;syncingSelection=true;clips.Clear();foreach(var c in state.Clips)clips.Add(c.Copy());list.SelectedIndex=state.Selection;syncingSelection=false;SelectMany(state.Selections??new List<int>{state.Selection});Status(forward?"다시 실행했습니다.":"이전 편집으로 되돌렸습니다.");}
   void SyncSelection(){timeline.SelectedIndex=list.SelectedIndex;timeline.SelectedIndices=new HashSet<int>(SelectedIndices());var c=list.SelectedItem as Segment;C<TextBox>("In").Text=Segment.Clock(c==null?0:c.Start);C<TextBox>("Out").Text=Segment.Clock(c==null?0:c.End);timeline.InvalidateVisual();}
   void SelectClip(int index,bool jump){selectionAnchor=index;SelectMany(new[]{index});if(jump&&index>=0&&index<clips.Count)seek.Value=Segment.Flatten(new[]{clips[index]}).First().Start;Refresh();}
   void SyncScroll(){if(timeline==null)return;syncingScroll=true;var bar=C<ScrollBar>("TimelineScroll");bar.Maximum=Math.Max(0,timeline.Duration-timeline.Span);bar.ViewportSize=timeline.Span;bar.SmallChange=Math.Max(.01,timeline.Span/20);bar.LargeChange=timeline.Span*.8;bar.Value=timeline.ViewStart;bar.IsEnabled=Ready&&bar.Maximum>0;syncingScroll=false;}
@@ -228,7 +233,7 @@ namespace ClipDock {
   }
   void Move(int delta){if(!Ready||list.SelectedItems.Count!=1)return;int i=list.SelectedIndex,j=i+delta;if(i<0||j<0||j>=clips.Count)return;Remember();int left=Math.Min(i,j),right=Math.Max(i,j);var a=clips[left];var b=clips[right];double start=a.Position.Value,gap=b.Position.Value-(a.Position.Value+a.Duration);b.Position=start;a.Position=start+b.Duration+Math.Max(0,gap);var selected=clips[i];syncingSelection=true;SortClips();syncingSelection=false;SelectClip(clips.IndexOf(selected),false);}  Settings Options() {
    double fps=info==null?60:info.Fps;string value=C<ComboBox>("Fps").Text.Trim();if(value!="원본 유지" && (!double.TryParse(value,NumberStyles.Float,Engine.Inv,out fps)||double.IsNaN(fps)||double.IsInfinity(fps)||fps<1||fps>1000))throw new Exception("FPS는 1~1000 사이 숫자 또는 '원본 유지'로 입력하세요.");
-   return new Settings{Ratio=C<ComboBox>("Ratio").Text,Mode=C<ComboBox>("Fit").SelectedIndex==1?"채우기":"여백",Resolution=C<ComboBox>("Resolution").Text,Fps=fps,X=C<Slider>("CropX").Value,Y=C<Slider>("CropY").Value,Encoder=C<ComboBox>("Encoder").SelectedIndex==1?"NVIDIA":"CPU"};
+   return new Settings{Ratio=C<ComboBox>("Ratio").Text,Mode=C<ComboBox>("Fit").SelectedIndex==2?"늘림":C<ComboBox>("Fit").SelectedIndex==1?"채우기":"여백",Zoom=C<Slider>("FrameZoom").Value,OffsetX=frameOffsetX,OffsetY=frameOffsetY,Resolution=C<ComboBox>("Resolution").Text,Fps=fps,X=C<Slider>("CropX").Value,Y=C<Slider>("CropY").Value,Encoder=C<ComboBox>("Encoder").SelectedIndex==1?"NVIDIA":"CPU"};
   }
   void Refresh() {
    if(root==null)return;Arrangement.Normalize(clips);bool ready=Ready;foreach(string id in new[]{"Save","Play","MarkIn","MarkOut","Add","Update","Remove","Up","Down","Split","ZoomIn","ZoomOut","ZoomAll"})C<Button>(id).IsEnabled=ready;
@@ -247,13 +252,13 @@ namespace ClipDock {
    catch{C<TextBlock>("FpsHint").Text="FPS에 1~1000 사이의 숫자를 입력하세요.";C<Button>("ExportConfirm").IsEnabled=false;}
    UpdateTime();
   }
-  void UpdateTime(){UpdateEditCursor();C<TextBlock>("Position").Text="타임라인 "+Segment.Clock(editTrack==null?0:editTrack.CursorTime)+" / "+Segment.Clock(Arrangement.Length(clips));if(timeline!=null){timeline.Playhead=seek.Value;timeline.InvalidateVisual();}}  void Preview(){if(info==null||root==null)return;try{var s=Options();int[] z=Engine.Size(info,s);var stage=C<Grid>("Stage");double scale=Math.Min(stage.ActualWidth/z[0],stage.ActualHeight/z[1]);if(scale<=0)return;var canvas=C<Canvas>("Viewport");canvas.Width=z[0]*scale;canvas.Height=z[1]*scale;double fit=s.Mode=="채우기"?Math.Max(canvas.Width/info.Width,canvas.Height/info.Height):Math.Min(canvas.Width/info.Width,canvas.Height/info.Height);player.Width=info.Width*fit;player.Height=info.Height*fit;Canvas.SetLeft(player,(canvas.Width-player.Width)*(s.Mode=="채우기"?s.X:.5));Canvas.SetTop(player,(canvas.Height-player.Height)*(s.Mode=="채우기"?s.Y:.5));still.Width=player.Width;still.Height=player.Height;Canvas.SetLeft(still,Canvas.GetLeft(player));Canvas.SetTop(still,Canvas.GetTop(player));if(resultPlayer!=null){resultPlayer.Width=canvas.Width;resultPlayer.Height=canvas.Height;Canvas.SetLeft(resultPlayer,0);Canvas.SetTop(resultPlayer,0);}C<TextBlock>("PreviewLabel").Text=(resultMode?"편집 결과  ·  ":"PREVIEW  ·  ")+s.Ratio+"  ·  "+(s.Mode=="채우기"?"채우기":"여백");}catch{}}
+  void UpdateTime(){UpdateEditCursor();C<TextBlock>("Position").Text="타임라인 "+Segment.Clock(editTrack==null?0:editTrack.CursorTime)+" / "+Segment.Clock(Arrangement.Length(clips));if(timeline!=null){timeline.Playhead=seek.Value;timeline.InvalidateVisual();}}  void Preview(){PreviewFraming();}
   void Keys(object sender,KeyEventArgs e){
-   e.Handled=Shortcut(e.Key,Keyboard.Modifiers,Keyboard.FocusedElement is TextBox||Keyboard.FocusedElement is ComboBox);
+   e.Handled=Shortcut(e.Key,Keyboard.Modifiers,Keyboard.FocusedElement is TextBox||Keyboard.FocusedElement is ComboBox||Keyboard.FocusedElement is Slider);
   }
   bool Shortcut(Key key,ModifierKeys modifiers,bool editingText){if(C<Border>("ExportOverlay").Visibility==Visibility.Visible){if(key==Key.Escape){CloseExportSettings();return true;}return false;}
    if((modifiers&ModifierKeys.Control)!=0){if((modifiers&ModifierKeys.Shift)!=0&&key==Key.S){SaveProjectDialog();return true;}if((modifiers&ModifierKeys.Shift)!=0&&key==Key.O){var opening=OpenProjectDialog();return true;}if(key==Key.O){OpenDialog();return true;}if(key==Key.S){var task=Export();return true;}if(editingText)return false;if(key==Key.A){if(Ready)SelectMany(Enumerable.Range(0,clips.Count));return true;}if(key==Key.J){if((modifiers&ModifierKeys.Shift)!=0)UnmergeSelected();else MergeSelected();return true;}if(key==Key.Z){Restore((modifiers&ModifierKeys.Shift)!=0);return true;}if(key==Key.Y){Restore(true);return true;}if(key==Key.B){SplitClip();return true;}return false;}
-   if(!editingText&&resultMode&&key==Key.Space){Toggle();return true;}if(editingText||!Ready)return false;
+   if(!editingText&&key==Key.Escape&&frameMode){SetFraming(false);return true;}if(!editingText&&resultMode&&key==Key.Space){Toggle();return true;}if(editingText||!Ready)return false;
    if(key==Key.Escape&&timeline.Drawing){timeline.Drawing=false;timeline.CancelDrawing();Refresh();}else if(key==Key.Space)Toggle();else if(key==Key.S)SplitClip();else if(key==Key.I)Mark(true);else if(key==Key.O)Mark(false);else if(key==Key.Delete||key==Key.Back)DeleteClip();else if(key==Key.Left||key==Key.Right){if(playing)Toggle();double step=(modifiers&ModifierKeys.Shift)!=0?1:1/info.Fps;SeekTrack(Math.Max(0,editTrack.CursorTime+(key==Key.Left?-step:step)));}else return false;
    return true;
   }
@@ -339,24 +344,9 @@ namespace ClipDock {
     if(args.Length>3&&args[0]=="--test-features"){editor.Loaded+=async delegate{try{await editor.TestFeatures(args[1],args[2]);var t=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(1000)};t.Tick+=delegate{t.Stop();editor.Snapshot(args[3]);editor.Close();};t.Start();}catch(Exception e){File.WriteAllText(args[2],e.ToString());app.Shutdown(1);}};}
     if(args.Length>3&&args[0]=="--test-grouping"){editor.Loaded+=async delegate{try{await editor.TestGrouping(args[1],args[2]);var t=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(1000)};t.Tick+=delegate{t.Stop();editor.Snapshot(args[3]);editor.Close();};t.Start();}catch(Exception e){File.WriteAllText(args[2],e.ToString());app.Shutdown(1);}};}
     if(args.Length>3&&args[0]=="--test-editview"){editor.Loaded+=async delegate{try{await editor.TestEditView(args[1],args[2]);var t=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(1000)};t.Tick+=delegate{t.Stop();editor.Snapshot(args[3]);editor.Close();};t.Start();}catch(Exception e){File.WriteAllText(args[2],e.ToString());app.Shutdown(1);}};}
+    if(args.Length>3&&args[0]=="--test-framing"){editor.Loaded+=async delegate{try{await editor.TestFraming(args[1],args[2]);var t=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(1000)};t.Tick+=delegate{t.Stop();editor.Snapshot(args[3]);editor.Close();};t.Start();}catch(Exception e){File.WriteAllText(args[2],e.ToString());app.Shutdown(1);}};}
     return app.Run(editor);
    }catch(Exception e){File.WriteAllText(Path.Combine(Engine.Base,"startup-error.txt"),e.ToString());if(args.Length==0)MessageBox.Show(e.Message,"ClipDock");return 1;}
   }
  }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

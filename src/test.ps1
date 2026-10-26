@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $projectPath = $PSScriptRoot
 if (Test-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'tools')) { $projectPath = Split-Path $PSScriptRoot -Parent }
 $testPath = Join-Path $projectPath 'tests'
@@ -60,3 +60,15 @@ foreach($comparison in @(@{Source='0.25';Result='0'},@{Source='2.25';Result='1'}
 
 
 
+$framingSource = Join-Path $testPath 'bordered-240.mp4'
+& $ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=black:s=640x360:r=240:d=1,drawbox=x=160:y=90:w=320:h=180:color=red:t=fill' -c:v libx264 -preset ultrafast -crf 10 -pix_fmt yuv420p $framingSource
+if($LASTEXITCODE -ne 0){throw 'Framing fixture failed'}
+$framingReport=Join-Path $testPath 'framing-results.txt'
+$framingArgs='--test-framing "'+$framingSource+'" "'+$framingReport+'" "'+(Join-Path $testPath 'framing-final.png')+'"'
+$framingProcess=Start-Process -FilePath (Join-Path $projectPath 'ClipDock.exe') -ArgumentList $framingArgs -PassThru -WindowStyle Hidden
+$framingProcess.WaitForExit()
+Get-Content $framingReport
+if($framingProcess.ExitCode -ne 0){throw 'Preview framing or transformed export tests failed'}
+$framingMeta=(& $ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames,avg_frame_rate -of json ($framingReport+'.zoom.mp4')) | ConvertFrom-Json
+if($framingMeta.streams[0].nb_frames -ne '60' -or $framingMeta.streams[0].avg_frame_rate -ne '240/1'){throw 'Transformed export frame count changed'}
+'PASS: Transformed Full HD export has exactly 60 frames at 240fps'

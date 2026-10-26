@@ -16,7 +16,7 @@ using Microsoft.Win32;
 
 namespace ClipDock {
  public class ProjectData {
-  public int Version=3;
+  public int Version=4;
   public string SourcePath,AbsoluteSourcePath,FpsText="원본 유지";
   public Settings Settings;
   public List<Segment> Clips;
@@ -26,7 +26,7 @@ namespace ClipDock {
  public static class Projects {
   public static bool Finite(double d){return !double.IsNaN(d)&&!double.IsInfinity(d);}
   public static void Validate(ProjectData p,double duration){
-   if(p==null||(p.Version!=1&&p.Version!=2&&p.Version!=3)||string.IsNullOrWhiteSpace(p.SourcePath)||p.Settings==null||p.Clips==null||p.Clips.Count>500)throw new Exception("지원하지 않거나 손상된 작업 파일입니다.");
+   if(p==null||(p.Version!=1&&p.Version!=2&&p.Version!=3&&p.Version!=4)||string.IsNullOrWhiteSpace(p.SourcePath)||p.Settings==null||p.Clips==null||p.Clips.Count>500)throw new Exception("지원하지 않거나 손상된 작업 파일입니다.");
    if(p.Clips.Any(c=>c==null||!Finite(c.Start)||!Finite(c.End)||c.Start<0||c.End<=c.Start||c.End>duration+.001))throw new Exception("작업의 편집 구간이 원본 영상 길이와 맞지 않습니다.");
    foreach(var group in p.Clips.Where(c=>c.Parts!=null)){
     if(group.Parts.Count<2||group.Parts.Count>500||group.Parts.Any(c=>c==null||c.Parts!=null||!Finite(c.Start)||!Finite(c.End)||c.Start<0||c.End<=c.Start||c.End>duration+.001))throw new Exception("연결한 구간 정보가 올바르지 않습니다.");
@@ -34,8 +34,8 @@ namespace ClipDock {
    }
    if(Segment.Flatten(p.Clips).Count>500)throw new Exception("구간이 너무 많습니다.");
    Arrangement.Validate(p.Clips);var s=p.Settings;
-   if(!new[]{"원본","16:9","9:16","4:3","1:1"}.Contains(s.Ratio)||!new[]{"여백","채우기"}.Contains(s.Mode)||!new[]{"원본 크기 기준","720p","1080p","1440p"}.Contains(s.Resolution)||!new[]{"CPU","NVIDIA"}.Contains(s.Encoder)||!Finite(s.Fps)||s.Fps<1||s.Fps>1000||!Finite(s.X)||!Finite(s.Y)||s.X<0||s.X>1||s.Y<0||s.Y>1)throw new Exception("작업 파일의 저장 설정이 올바르지 않습니다.");
-   double fps;if(p.FpsText!="원본 유지"&&(!double.TryParse(p.FpsText,System.Globalization.NumberStyles.Float,Engine.Inv,out fps)||!Finite(fps)||fps<1||fps>1000))throw new Exception("작업 파일의 FPS 값이 올바르지 않습니다.");
+   if(!new[]{"원본","16:9","9:16","4:3","1:1"}.Contains(s.Ratio)||!new[]{"여백","채우기","늘림"}.Contains(s.Mode)||!new[]{"원본 크기 기준","720p","1080p","1440p"}.Contains(s.Resolution)||!new[]{"CPU","NVIDIA"}.Contains(s.Encoder)||!Finite(s.Fps)||s.Fps<1||s.Fps>1000||!Finite(s.X)||!Finite(s.Y)||s.X<0||s.X>1||s.Y<0||s.Y>1)throw new Exception("작업 파일의 저장 설정이 올바르지 않습니다.");
+   Engine.ValidateTransform(s);double fps;if(p.FpsText!="원본 유지"&&(!double.TryParse(p.FpsText,System.Globalization.NumberStyles.Float,Engine.Inv,out fps)||!Finite(fps)||fps<1||fps>1000))throw new Exception("작업 파일의 FPS 값이 올바르지 않습니다.");
    if(!Finite(p.Position)||!Finite(p.ViewStart)||!Finite(p.ViewSpan)||p.Position<0||p.Position>duration+.001||p.ViewStart<0||p.ViewSpan<0||p.ViewStart>duration||p.ViewSpan>duration+.001)throw new Exception("작업 파일의 재생 위치가 올바르지 않습니다.");
   }
   public static ProjectData Read(string path){if(new FileInfo(path).Length>2*1024*1024)throw new Exception("작업 파일이 너무 큽니다.");var p=new JavaScriptSerializer().Deserialize<ProjectData>(File.ReadAllText(path,Encoding.UTF8));Validate(p,double.MaxValue);return p;}
@@ -57,7 +57,7 @@ namespace ClipDock {
   },token);}
   public static BitmapImage Decode(byte[] bytes){var b=new BitmapImage();using(var stream=new MemoryStream(bytes)){b.BeginInit();b.CacheOption=BitmapCacheOption.OnLoad;b.StreamSource=stream;b.EndInit();}b.Freeze();return b;}
   public static async Task Render(string source,string output,VideoInfo info,Settings settings,IList<Segment> clips,CancellationToken token,Action<double> progress){
-   string script=output+".filter";var preview=new Settings{Ratio=settings.Ratio,Mode=settings.Mode,Resolution="720p",Encoder="CPU",Fps=Math.Min(60,settings.Fps),X=settings.X,Y=settings.Y};
+   string script=output+".filter";var preview=new Settings{Ratio=settings.Ratio,Mode=settings.Mode,Resolution="720p",Encoder="CPU",Fps=Math.Min(60,settings.Fps),X=settings.X,Y=settings.Y,Zoom=settings.Zoom,OffsetX=settings.OffsetX,OffsetY=settings.OffsetY};
    try{
     File.WriteAllText(script,Engine.Filter(info,preview,clips),new UTF8Encoding(false));
     string args=Engine.Arguments(source,output,script,info,preview,clips).Replace("-preset veryfast -crf 20","-preset ultrafast -crf 25");
@@ -89,7 +89,7 @@ namespace ClipDock {
    timeline.ViewChanged+=ScheduleFilmstrip;timeline.SizeChanged+=delegate{ScheduleFilmstrip();};
   }
   ProjectData CaptureProject(){return new ProjectData{SourcePath=source,Settings=Options(),FpsText=C<ComboBox>("Fps").Text,Clips=clips.Select(c=>c.Copy()).ToList(),Position=seek.Value,Selection=list.SelectedIndex,ViewStart=timeline.ViewStart,ViewSpan=timeline.ViewSpan};}
-  string StateKey(){if(info==null)return "";return new JavaScriptSerializer().Serialize(new{Source=source,Clips=clips.Select(c=>c.Copy()).ToArray(),Ratio=C<ComboBox>("Ratio").Text,Mode=C<ComboBox>("Fit").SelectedIndex,Resolution=C<ComboBox>("Resolution").Text,Fps=C<ComboBox>("Fps").Text,Encoder=C<ComboBox>("Encoder").SelectedIndex,X=C<Slider>("CropX").Value,Y=C<Slider>("CropY").Value});}
+  string StateKey(){if(info==null)return "";return new JavaScriptSerializer().Serialize(new{Source=source,Clips=clips.Select(c=>c.Copy()).ToArray(),Ratio=C<ComboBox>("Ratio").Text,Mode=C<ComboBox>("Fit").SelectedIndex,Resolution=C<ComboBox>("Resolution").Text,Fps=C<ComboBox>("Fps").Text,Encoder=C<ComboBox>("Encoder").SelectedIndex,X=C<Slider>("CropX").Value,Y=C<Slider>("CropY").Value,Zoom=C<Slider>("FrameZoom").Value,OffsetX=frameOffsetX,OffsetY=frameOffsetY});}
   bool HasChanges {get{return info!=null&&savedKey!=null&&savedKey!=StateKey();}}
   bool ConfirmLeave(){if(Automated||!HasChanges)return true;var answer=MessageBox.Show(this,"편집한 작업을 저장할까요?\n저장하면 자른 구간과 설정을 나중에 다시 불러올 수 있습니다.","작업 저장",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);return answer==MessageBoxResult.No||(answer==MessageBoxResult.Yes&&SaveProjectDialog());}
   bool SaveProjectDialog(){if(info==null||busy||loading||previewBusy)return false;var d=new SaveFileDialog{Title="편집 작업 저장",Filter="ClipDock 작업|*.clipdock",DefaultExt=".clipdock",AddExtension=true,FileName=projectPath??Path.Combine(Path.GetDirectoryName(source),Path.GetFileNameWithoutExtension(source)+".clipdock"),OverwritePrompt=true};if(d.ShowDialog(this)!=true)return false;try{Projects.Write(d.FileName,CaptureProject());projectPath=d.FileName;savedKey=StateKey();Refresh();Status("작업 저장 완료 · "+projectPath);return true;}catch(Exception e){Error(e);return false;}}
@@ -102,12 +102,12 @@ namespace ClipDock {
     loading=true;Refresh();var data=await Task.Run(()=>Engine.Probe(resolved));Projects.Validate(p,data.Duration);if(closed)return;loading=false;
     await Load(resolved);if(source!=resolved||info==null)return;
     syncingSelection=true;clips.Clear();foreach(var c in p.Clips)clips.Add(c.Copy());list.SelectedIndex=Math.Max(-1,Math.Min(clips.Count-1,p.Selection));syncingSelection=false;
-    C<ComboBox>("Ratio").SelectedItem=p.Settings.Ratio;C<ComboBox>("Fit").SelectedIndex=p.Settings.Mode=="채우기"?1:0;C<ComboBox>("Resolution").SelectedItem=p.Settings.Resolution;C<ComboBox>("Fps").Text=p.FpsText;C<ComboBox>("Encoder").SelectedIndex=p.Settings.Encoder=="NVIDIA"?1:0;C<Slider>("CropX").Value=p.Settings.X;C<Slider>("CropY").Value=p.Settings.Y;
+    C<ComboBox>("Ratio").SelectedItem=p.Settings.Ratio;C<ComboBox>("Fit").SelectedIndex=p.Settings.Mode=="늘림"?2:p.Settings.Mode=="채우기"?1:0;C<Slider>("FrameZoom").Value=p.Settings.Zoom;frameOffsetX=p.Settings.OffsetX;frameOffsetY=p.Settings.OffsetY;C<ComboBox>("Resolution").SelectedItem=p.Settings.Resolution;C<ComboBox>("Fps").Text=p.FpsText;C<ComboBox>("Encoder").SelectedIndex=p.Settings.Encoder=="NVIDIA"?1:0;C<Slider>("CropX").Value=p.Settings.X;C<Slider>("CropY").Value=p.Settings.Y;
     timeline.ViewSpan=p.ViewSpan;timeline.ViewStart=Math.Min(p.ViewStart,Math.Max(0,info.Duration-timeline.Span));seek.Value=Math.Min(info.Duration,p.Position);undo.Clear();redo.Clear();projectPath=path;SyncSelection();SyncScroll();savedKey=StateKey();Refresh();ScheduleFilmstrip();Status("작업을 불러왔습니다 · "+Path.GetFileName(path));
    }catch(Exception e){if(Automated)throw;Error(e);}finally{loading=false;if(!closed)Refresh();}
   }
   async Task OpenPath(string path){if(busy||loading||previewBusy||!ConfirmLeave())return;LeaveResult();if(string.Equals(Path.GetExtension(path),".clipdock",StringComparison.OrdinalIgnoreCase))await LoadProject(path,null);else await Load(path);}
-  void ResetFeatureSource(){ResetTrackScale();LeaveResult();DeleteResultCache();projectPath=null;filmGeneration++;if(filmCancel!=null)filmCancel.Cancel();filmCache.Clear();timeline.Frames.Clear();timeline.Drawing=false;savedKey=StateKey();ScheduleFilmstrip();}
+  void ResetFeatureSource(){ResetFraming();ResetTrackScale();LeaveResult();DeleteResultCache();projectPath=null;filmGeneration++;if(filmCancel!=null)filmCancel.Cancel();filmCache.Clear();timeline.Frames.Clear();timeline.Drawing=false;savedKey=StateKey();ScheduleFilmstrip();}
   void RefreshFeatures(){
    if(resultPlayer==null)return;bool usable=info!=null&&!busy&&!loading;
    C<Button>("ProjectSave").IsEnabled=usable&&!previewBusy;C<Button>("ProjectOpen").IsEnabled=!busy&&!loading&&!previewBusy;
@@ -116,7 +116,7 @@ namespace ClipDock {
    if(info!=null)Title="ClipDock · "+(projectPath==null?Path.GetFileName(source):Path.GetFileName(projectPath))+(HasChanges?" *":"");
   }
   void DeleteResultCache(){resultPlayer.Close();if(resultCachePath!=null)try{File.Delete(resultCachePath);}catch{}resultCachePath=null;resultCacheKey=null;}
-  void LeaveResult(){if(resultPlayer==null)return;resultPlayer.Pause();resultPlaying=false;resultMode=false;resultPlayer.Visibility=Visibility.Collapsed;player.Visibility=Visibility.Visible;still.Visibility=Visibility.Visible;C<Slider>("ResultSeek").Visibility=Visibility.Collapsed;C<Button>("Play").Content="▶ 원본";Refresh();ScheduleStill();}
+  void LeaveResult(){if(resultPlayer==null)return;resultPlayer.Pause();resultPlaying=false;resultMode=false;resultPlayer.Visibility=Visibility.Collapsed;player.Visibility=Visibility.Visible;still.Visibility=Visibility.Visible;C<Slider>("ResultSeek").Visibility=Visibility.Collapsed;C<Button>("Play").Content="▶ 재생";Refresh();ScheduleStill();}
   async Task ShowResult(){
    if(info==null||busy||loading||clips.Count==0)return;if(playing)Toggle();string key=StateKey();previewBusy=true;previewCancel=new CancellationTokenSource();var cancellation=previewCancel;Refresh();
    try{
@@ -171,6 +171,3 @@ namespace ClipDock {
   }
  }
 }
-
-
-

@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 $outputPath = $PSScriptRoot
 if (Test-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'tools')) { $outputPath = Split-Path $PSScriptRoot -Parent }
@@ -12,10 +12,6 @@ $compilerArgs += Join-Path $PSScriptRoot 'Grouping.cs'
 $compilerArgs += Join-Path $PSScriptRoot 'EditView.cs'
 $compilerArgs += Join-Path $PSScriptRoot 'Arrangement.cs'
 $compilerArgs += Join-Path $PSScriptRoot 'LivePlayback.cs'
+$compilerArgs += Join-Path $PSScriptRoot 'Framing.cs'
 & (Join-Path $framework 'csc.exe') @compilerArgs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
-
-
-
-
-
